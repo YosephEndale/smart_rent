@@ -1,0 +1,14 @@
+.env
+.log
+.wav
+.mp3
+.pt
+.bin
+.pkl
+.tar
+.tar.gz
+.zip
+/vendor
+/cache
+/tmp
+/uploaded_files

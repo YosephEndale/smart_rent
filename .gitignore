@@ -15,3 +15,10 @@
 
 # Local database dump - do not commit
 rent_web.sql
+
+# Local configuration files
+.env.local
+.env.*.local
+local_config.php
+
+/doc/APACHE_SETUP.md

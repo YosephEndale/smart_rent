@@ -1,5 +1,6 @@
 <?php
 if (!defined('ROOT_DIR')) define('ROOT_DIR', __DIR__ . '/..');
+if (!defined('PUBLIC_URL')) define('PUBLIC_URL', '/');
 
 $dotenvFile = ROOT_DIR . '/.env';
 if (!file_exists($dotenvFile)) die("Configuration error: .env file not found");

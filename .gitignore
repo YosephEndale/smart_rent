@@ -12,3 +12,6 @@
 /cache
 /tmp
 /uploaded_files
+
+# Local database dump - do not commit
+rent_web.sql

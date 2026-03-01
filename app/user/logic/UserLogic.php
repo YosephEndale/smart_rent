@@ -197,7 +197,16 @@ class UserLogic {
                         ];
                     }
 
-                    $api_key = $_ENV['OPENROUTER_API_KEY_SCORING'] ?? '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';
+                    $api_key = getenv('OPENROUTER_API_KEY_SCORING') ?: getenv('OPENROUTER_API_KEY');
+                    if (!$api_key) {
+                        error_log('OPENROUTER_API_KEY_SCORING or OPENROUTER_API_KEY not set in .env file');
+                        return [
+                            'success' => false,
+                            'message' => 'API configuration error: Missing API key',
+                            'score' => 0,
+                            'breakdown' => []
+                        ];
+                    }
                     $api_url = 'https://openrouter.ai/api/v1/chat/completions';
 
                     $system_prompt = "

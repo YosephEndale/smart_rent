@@ -5,6 +5,14 @@ session_start();
 require_once __DIR__ . '/../../../vendor/autoload.php';
 require_once __DIR__ . '/../../../config/env.php';
 
+// Define PUBLIC_URL with fallback if not defined
+if (!defined('PUBLIC_URL')) {
+    define('PUBLIC_URL', '/');
+}
+if (!defined('ROOT_DIR')) {
+    define('ROOT_DIR', dirname(__DIR__, 3));
+}
+
 // Include necessary files
 require_once ROOT_DIR . '/components/connect.php';
 require_once ROOT_DIR . '/app/notifications/logic/SendNotification.php';
@@ -26,8 +34,11 @@ if (!$get_id) {
     exit;
 }
 
-// Hardcode Google Translate API key (consider moving to environment variable in production)
-$apiKey = $_ENV['GOOGLE_TRANSLATE_API_KEY'] ?? 'AIzaSyDtKz7XS7a0qGgeP3DHbg84DQQrXOH3Zw4';
+// Get Google Translate API key from environment
+$apiKey = getenv('GOOGLE_API_KEY') ?: getenv('GOOGLE_MAPS_API_KEY');
+if (!$apiKey) {
+    error_log('GOOGLE_API_KEY or GOOGLE_MAPS_API_KEY not set in .env file');
+}
 
 // Define the URL path for uploaded files
 define('UPLOADED_FILES_URL', '/uploaded_files');
@@ -196,20 +207,26 @@ if (isset($_POST['update'])) {
 
     // Translate property name and description
     if (empty($warning_msg)) {
-        $translated_property_name = translateText($property_name, $apiKey, 'en', 'it');
-        if ($translated_property_name !== false) {
-            $property_name = $translated_property_name;
+        // Check if API key is available for translation
+        if (empty($apiKey)) {
+            $warning_msg[] = 'Translation API key not configured. Skipping translation.';
+            error_log('GOOGLE_API_KEY not configured in .env');
         } else {
-            $warning_msg[] = 'Failed to translate property name to English. Using original text.';
-            error_log("Translation failed for property_name: $property_name");
-        }
+            $translated_property_name = translateText($property_name, $apiKey, 'en', 'it');
+            if ($translated_property_name !== false) {
+                $property_name = $translated_property_name;
+            } else {
+                $warning_msg[] = 'Failed to translate property name to English. Using original text.';
+                error_log("Translation failed for property_name: $property_name");
+            }
 
-        $translated_description = translateText($description, $apiKey, 'en', 'it');
-        if ($translated_description !== false) {
-            $description = $translated_description;
-        } else {
-            $warning_msg[] = 'Failed to translate description to English. Using original text.';
-            error_log("Translation failed for description: $description");
+            $translated_description = translateText($description, $apiKey, 'en', 'it');
+            if ($translated_description !== false) {
+                $description = $translated_description;
+            } else {
+                $warning_msg[] = 'Failed to translate description to English. Using original text.';
+                error_log("Translation failed for description: $description");
+            }
         }
 
         // Handle facilities
@@ -616,7 +633,7 @@ $_SESSION['warning_msg'] = $warning_msg;
         });
     }
 </script>
-<script src="https://maps.googleapis.com/maps/api/js?key=<?= htmlspecialchars($_ENV['GOOGLE_MAPS_API_KEY'] ?? 'AIzaSyAG_SiDgz9Rp5HZld5PKKlEesaDTEbojWs', ENT_QUOTES, 'UTF-8'); ?>&libraries=places&callback=initAutocomplete" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=<?= htmlspecialchars(getenv('GOOGLE_API_KEY') ?: getenv('GOOGLE_MAPS_API_KEY') ?: '', ENT_QUOTES, 'UTF-8'); ?>&libraries=places&callback=initAutocomplete" async defer></script>
 <?php include ROOT_DIR . '/components/footer.php'; ?>
 <script src="<?= PUBLIC_URL ?>/js/script.js"></script>
 <?php include ROOT_DIR . '/components/message.php'; ?>

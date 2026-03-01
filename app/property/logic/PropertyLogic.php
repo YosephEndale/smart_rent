@@ -19,13 +19,17 @@ require_once ROOT_DIR . '/app/scam/logic/ScamLogic.php';
 require_once ROOT_DIR . '/app/property/data/PropertyData.php';
 
 class PropertyLogic {
-    private $apiKey = 'AIzaSyDtKz7XS7a0qGgeP3DHbg84DQQrXOH3Zw4';
+    private $apiKey;
     private $scamLogic;
     private $propertyData;
     private $conn;
 
     public function __construct($conn) {
         $this->conn = $conn;
+        $this->apiKey = getenv('GOOGLE_API_KEY');
+        if (!$this->apiKey) {
+            error_log('GOOGLE_API_KEY not set in .env file');
+        }
         $this->scamLogic = new ScamLogic($conn);
         $this->propertyData = new PropertyData($conn);
     }

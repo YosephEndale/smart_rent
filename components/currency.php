@@ -2,8 +2,12 @@
 // Cache settings
 $cache_time = 3600; // 1 hour cache
 
-// Your Fixer API key
-$fixer_api_key = '68f85030f8357ed081e7e18a824b1b04';
+// Fixer API key from environment
+$fixer_api_key = getenv('FIXER_API_KEY');
+if (!$fixer_api_key) {
+    error_log('FIXER_API_KEY not set in .env file');
+    $fixer_api_key = ''; // Will cause API call to fail with proper error
+}
 
 // Fetch rates from Fixer API if cache expired or not set
 if (!isset($_SESSION['rates_time']) || time() - $_SESSION['rates_time'] > $cache_time) {

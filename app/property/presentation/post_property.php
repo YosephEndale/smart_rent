@@ -373,7 +373,7 @@ function initAutocomplete() {
     });
 }
 </script>
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDtKz7XS7a0qGgeP3DHbg84DQQrXOH3Zw4&libraries=places&callback=initAutocomplete" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=<?= htmlspecialchars(getenv('GOOGLE_API_KEY') ?: getenv('GOOGLE_MAPS_API_KEY') ?: '', ENT_QUOTES, 'UTF-8'); ?>&libraries=places&callback=initAutocomplete" async defer></script>
 </body>
 </html>
 <?php ob_end_flush();  ?>

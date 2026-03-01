@@ -75,7 +75,13 @@ if ($needs_escalation) {
     }
 } else {
     // Initialize OpenRouter API
-    $api_key = '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';
+    $api_key = getenv('OPENROUTER_API_KEY');
+    if (!$api_key) {
+        error_log('OPENROUTER_API_KEY not set in .env file');
+        $response = 'API configuration error. Please try again later.';
+        echo json_encode(['response' => $response]);
+        exit;
+    }
     $ch = curl_init('https://openrouter.ai/api/v1/chat/completions');
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [

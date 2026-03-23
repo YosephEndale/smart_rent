@@ -1,14 +1,27 @@
 <?php
 session_start();
 
+// Initialize message arrays
+$success_msg = [];
+$warning_msg = [];
+$info_msg = [];
+$error_msg = [];
+
 // Use the provided require_once statements
 require_once __DIR__ . '/../../../vendor/autoload.php';
 require_once __DIR__ . '/../../../config/env.php';
-require_once ROOT_DIR . '/components/connect.php';
+
+// Get database connection
+try {
+    require_once ROOT_DIR . '/components/connect.php';
+} catch (Exception $e) {
+    $error_msg[] = 'Database connection error: ' . $e->getMessage();
+    error_log('Register page - DB connection error: ' . $e->getMessage());
+}
 
 // Redirect if already logged in
 if (isset($_SESSION['user_id']) && !empty($_SESSION['user_id'])) {
-    header('location: ' . ROOT_DIR . '/app/user/presentation/dashboard.php'); // Adjusted to dashboard.php
+    header('Location: ' . ROOT_DIR . '/app/user/presentation/dashboard.php');
     exit();
 }
 
@@ -20,18 +33,17 @@ if (!$ENCRYPTION_KEY || strlen($ENCRYPTION_KEY) !== 32) {
     exit();
 }
 
-// Set OpenSSL environment variables
-putenv("OPENSSL_CONF=" . ROOT_DIR . "/config/openssl.cnf"); // Adjust to config directory
-putenv("TMP=" . ROOT_DIR . "/tmp");
-putenv("TEMP=" . ROOT_DIR . "/tmp");
-
-// Create tmp directory if it doesn't exist
+// Create tmp directory for temporary OpenSSL operations
 $tmp_dir = ROOT_DIR . "/tmp";
 if (!is_dir($tmp_dir)) {
     mkdir($tmp_dir, 0777, true);
 }
 
 if (isset($_POST['submit'])) {
+    // Check if database connection exists
+    if (empty($conn)) {
+        $error_msg[] = 'Database connection failed. Please try again later.';
+    } else {
     // Sanitize inputs
     $name = strip_tags($_POST['name']);
     $number = strip_tags($_POST['number']);
@@ -92,8 +104,7 @@ if (isset($_POST['submit'])) {
                     } else {
                         $config = [
                             "private_key_bits" => 2048,
-                            "private_key_type" => OPENSSL_KEYTYPE_RSA,
-                            "config" => ROOT_DIR . "/config/openssl.cnf" // Adjust to config directory
+                            "private_key_type" => OPENSSL_KEYTYPE_RSA
                         ];
 
                         while (openssl_error_string()) {}
@@ -103,7 +114,7 @@ if (isset($_POST['submit'])) {
                             error_log("Key generation failed for user $user_id: " . openssl_error_string());
                         } else {
                             $private_key_path = "$key_dir/{$user_id}_private.pem";
-                            if (!openssl_pkey_export($private_key_resource, $private_key_pem, null, $config)) {
+                            if (!openssl_pkey_export($private_key_resource, $private_key_pem)) {
                                 $warning_msg[] = "Failed to export private key for user ID: $user_id";
                                 error_log("Private key export failed for user $user_id: " . openssl_error_string());
                             } elseif (!file_put_contents($private_key_path, $private_key_pem)) {
@@ -130,6 +141,7 @@ if (isset($_POST['submit'])) {
             }
         }
     }
+    } // Close database connection check
 }
 ?>
 

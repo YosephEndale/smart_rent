@@ -1,8 +1,4 @@
 <?php
-namespace App\User\Presentation;
-
-use PDO;
-use Exception;
 use App\Scam\Logic\ScamLogic;
 use App\User\Logic\UserLogic;
 use App\Components\Recommendations;
@@ -12,6 +8,7 @@ if (!defined('ROOT_DIR')) {
     define('ROOT_DIR', __DIR__); 
 }
 
+require_once ROOT_DIR . '/config/env.php';
 require_once ROOT_DIR . '/vendor/autoload.php';
 require_once ROOT_DIR . '/components/connect.php';
 require_once ROOT_DIR . '/components/currency.php';
@@ -25,6 +22,21 @@ try {
     }
 } catch (Exception $e) {
     error_log("Session start error in index.php: " . $e->getMessage());
+}
+
+// Initialize message arrays
+$warning_msg = [];
+$success_msg = [];
+$info_msg = [];
+$error_msg = [];
+
+// Get database connection
+try {
+    $conn = get_db_connection();
+} catch (Exception $e) {
+    error_log("Database connection error in index.php: " . $e->getMessage());
+    $error_msg[] = "Database connection failed. Please try again later.";
+    $conn = null;
 }
 
 // Run scam detection and expiration checks automatically
@@ -42,50 +54,85 @@ if (!file_exists($lastRunFile) || (time() - filemtime($lastRunFile)) > $runInter
 
 if ($shouldRun) {
     try {
-        $conn = get_db_connection();
-        $scamLogic = new ScamLogic($conn);
-        $batchResult = $scamLogic->runBatchScamDetection();
-        $expirationResult = $scamLogic->checkExpiredProperties();
-        error_log("index.php: Automatic batch scam detection and expiration check completed - batch_processed={$batchResult['processed']}, suspicious={$batchResult['suspicious']}, expired={$expirationResult['expired']}");
-    } catch (Exception $e) {
+        if (class_exists('App\Scam\Logic\ScamLogic')) {
+            $scamLogic = new ScamLogic($conn);
+            $batchResult = $scamLogic->runBatchScamDetection();
+            $expirationResult = $scamLogic->checkExpiredProperties();
+            error_log("index.php: Automatic batch scam detection and expiration check completed - batch_processed={$batchResult['processed']}, suspicious={$batchResult['suspicious']}, expired={$expirationResult['expired']}");
+        } else {
+            error_log("index.php: ScamLogic class not found");
+        }
+    } catch (Throwable $e) {
         error_log("index.php: Automatic batch scam detection failed: " . $e->getMessage());
     }
 }
 
 $user_id = $_SESSION['user_id'] ?? '';
-$warning_msg = $_SESSION['warning_msg'] ?? [];
-$success_msg = $_SESSION['success_msg'] ?? [];
+
+// Merge session messages with initialized arrays
+if (isset($_SESSION['warning_msg']) && is_array($_SESSION['warning_msg'])) {
+    $warning_msg = array_merge($warning_msg, $_SESSION['warning_msg']);
+}
+if (isset($_SESSION['success_msg']) && is_array($_SESSION['success_msg'])) {
+    $success_msg = array_merge($success_msg, $_SESSION['success_msg']);
+}
+
+// Clear session messages
 $_SESSION['warning_msg'] = [];
 $_SESSION['success_msg'] = [];
 
-$result = Recommendations::getRecommendedProperties($user_id, get_db_connection(), $rates);
-$heading = $result['heading'] ?? 'Latest Dream Homes Just for You!';
-$properties = $result['properties'] ?? [];
+// Get recommendations only if we have a database connection
+if ($conn) {
+    $result = Recommendations::getRecommendedProperties($user_id, $conn, $rates ?? []);
+    $heading = $result['heading'] ?? 'Latest Dream Homes Just for You!';
+    $properties = $result['properties'] ?? [];
 
-if (isset($result['error'])) {
-    $warning_msg[] = $result['error'];
+    if (isset($result['error'])) {
+        $warning_msg[] = $result['error'];
+    }
+} else {
+    $heading = 'Latest Dream Homes Just for You!';
+    $properties = [];
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save']) && $user_id) {
-    $userLogic = new UserLogic(get_db_connection());
-    $property_id = filter_var($_POST['property_id'] ?? '', FILTER_VALIDATE_INT);
-    if ($property_id) {
-        $save_result = $userLogic->saveProperty($user_id, $property_id);
-        if (isset($save_result['success'])) {
-            $success_msg[] = $save_result['success'];
-        } elseif (isset($save_result['error'])) {
-            $warning_msg[] = $save_result['error'];
+if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save']) && $user_id) {
+    if (!$conn) {
+        try {
+            $conn = get_db_connection();
+        } catch (Exception $e) {
+            $warning_msg[] = 'Database connection failed.';
         }
-    } else {
-        $warning_msg[] = 'Invalid property ID';
+    }
+    
+    if ($conn) {
+        $userLogic = new UserLogic($conn);
+        $property_id = filter_var($_POST['property_id'] ?? '', FILTER_VALIDATE_INT);
+        if ($property_id) {
+            $save_result = $userLogic->saveProperty($user_id, $property_id);
+            if (isset($save_result['success'])) {
+                $success_msg[] = $save_result['success'];
+            } elseif (isset($save_result['error'])) {
+                $warning_msg[] = $save_result['error'];
+            }
+        } else {
+            $warning_msg[] = 'Invalid property ID';
+        }
     }
     header('Location: /index.php');
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send']) && $user_id) {
+if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send']) && $user_id) {
+    if (!$conn) {
+        try {
+            $conn = get_db_connection();
+        } catch (Exception $e) {
+            $warning_msg[] = 'Database connection failed.';
+            exit;
+        }
+    }
+    
     $property_id = filter_var($_POST['property_id'] ?? '', FILTER_VALIDATE_INT);
-    $conn = get_db_connection();
     $owner_id = $conn->prepare("SELECT user_id FROM property WHERE id = ?");
     $owner_id->execute([$property_id]);
     $owner_id = $owner_id->fetchColumn();
@@ -130,8 +177,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send']) && $user_id) 
         $warning_msg[] = 'Property owner not found';
     }
 }
-
-$conn = get_db_connection();
 ?>
 
 <!DOCTYPE html>

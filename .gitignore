@@ -8,10 +8,15 @@
 .tar
 .tar.gz
 .zip
+.pem
 /vendor
 /cache
 /tmp
 /uploaded_files
+
+# Private keys and secure directories - NEVER commit these!
+/secure_keys
+/secure_keys/*
 
 # Local database dump - do not commit
 rent_web.sql

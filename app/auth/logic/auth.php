@@ -63,12 +63,22 @@ function handleLogin($email, $pass) {
                     return ['warning_msg' => ['Telegram bot configuration error. Please contact support.']];
                 }
 
-                if (!checkTelegramChat($telegram_id, $bot_token)) {
+                // Skip Telegram verification in development mode
+                $skip_telegram_check = getenv('SKIP_TELEGRAM_CHECK') === 'true';
+                
+                if (!$skip_telegram_check && !checkTelegramChat($telegram_id, $bot_token)) {
                     return ['warning_msg' => ['Please send /start to @RentalMFA_Bot first!']];
                 }
 
-                // Generate and send OTP
-                $result = sendOtp($row['user_id'], $telegram_id, $bot_token);
+                // Generate and send OTP (skip sending in development mode if Telegram not available)
+                if ($skip_telegram_check) {
+                    // In development mode, generate OTP locally without sending via Telegram
+                    error_log("Development mode: Skipping Telegram OTP send");
+                    $result = ['success' => true]; // Simulate successful OTP generation
+                } else {
+                    $result = sendOtp($row['user_id'], $telegram_id, $bot_token);
+                }
+                
                 if (isset($result['warning_msg'])) {
                     return ['warning_msg' => $result['warning_msg']];
                 }

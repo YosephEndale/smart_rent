@@ -6,6 +6,39 @@
     "autoload": {
         "psr-4": {
             "App\\": "app/"
-        }
+        },
+        "classmap": [
+            "app/admin/logic/",
+            "app/admin/data/",
+            "app/admin/presentation/",
+            "app/auth/logic/",
+            "app/auth/data/",
+            "app/auth/presentation/",
+            "app/chat/logic/",
+            "app/chat/data/",
+            "app/chat/presentation/",
+            "app/notifications/logic/",
+            "app/notifications/data/",
+            "app/notifications/presentation/",
+            "app/property/logic/",
+            "app/property/data/",
+            "app/property/presentation/",
+            "app/reviews/logic/",
+            "app/reviews/data/",
+            "app/reviews/presentation/",
+            "app/scam/logic/",
+            "app/scam/data/",
+            "app/scam/presentation/",
+            "app/screening/logic/",
+            "app/screening/data/",
+            "app/screening/presentation/",
+            "app/subscription/logic/",
+            "app/subscription/data/",
+            "app/subscription/presentation/",
+            "app/user/logic/",
+            "app/user/data/",
+            "app/user/presentation/",
+            "components/"
+        ]
     }
 }

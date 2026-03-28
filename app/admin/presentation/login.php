@@ -16,27 +16,14 @@ require_once ROOT_DIR . '/app/scam/presentation/scam_detection.php';
 
 use App\Admin\Logic\AdminLogic;
 
-// Debug: Check if AdminLogic class exists
-if (!class_exists('App\Admin\Logic\AdminLogic')) {
-    $autoloadFile = ROOT_DIR . '/vendor/autoload.php';
-    $classMapFile = ROOT_DIR . '/vendor/composer/autoload_classmap.php';
-    $classMap = file_exists($classMapFile) ? include $classMapFile : [];
-    $debugInfo = [
-        'Autoloader exists' => file_exists($autoloadFile),
-        'Class map exists' => file_exists($classMapFile),
-        'AdminLogic in class map' => isset($classMap['App\\Admin\\Logic\\AdminLogic']),
-        'AdminLogic file exists' => file_exists(ROOT_DIR . '/app/admin/logic/AdminLogic.php'),
-        'AdminLogic file readable' => is_readable(ROOT_DIR . '/app/admin/logic/AdminLogic.php')
-    ];
-    error_log('AdminLogic not found: ' . print_r($debugInfo, true));
-    die('Error: Class App\Admin\Logic\AdminLogic not found. Debug info: ' . htmlspecialchars(print_r($debugInfo, true)));
-}
+// The PSR-4 autoloader should handle loading AdminLogic
+// No need to check classmap as it uses dynamic PSR-4 loading
 
 try {
     $adminLogic = new AdminLogic($conn);
-} catch (Exception $e) {
-    error_log('Failed to instantiate AdminLogic: ' . $e->getMessage());
-    die('Error: Failed to instantiate AdminLogic: ' . htmlspecialchars($e->getMessage()));
+} catch (Throwable $e) {
+    error_log('Failed to load AdminLogic: ' . $e->getMessage());
+    die('Error: Failed to load AdminLogic class: ' . htmlspecialchars($e->getMessage()));
 }
 
 $warning_msg = [];

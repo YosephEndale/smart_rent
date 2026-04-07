@@ -19,7 +19,8 @@
 /secure_keys/*
 
 # Local database dump - do not commit
-rent_web.sql
+/database/rent_web.sql
+/database/rent_web.sqlite
 
 # Local configuration files
 .env.local
@@ -27,3 +28,4 @@ rent_web.sql
 local_config.php
 
 /doc/APACHE_SETUP.md
+SQLITE_QUICK_START.md

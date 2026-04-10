@@ -3,45 +3,58 @@ namespace App\Notifications\Logic;
 
 use App\Notifications\Data\notification_logs;
 use PDO;
-use GuzzleHttp\Client;
-use GuzzleHttp\Exception\RequestException;
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\SMTP;
+use PHPMailer\PHPMailer\Exception as MailerException;
 
 require_once __DIR__ . '/../../../config/env.php';
 require_once ROOT_DIR . '/app/notifications/data/notification_logs.php';
 
 class SendNotification {
-    private $db;
-    private $bot_token;
-    private $encryption_key;
-    private $client;
+    private PDO $db;
+    private string $smtpHost;
+    private int $smtpPort;
+    private string $smtpUser;
+    private string $smtpPass;
+    private string $fromEmail;
+    private string $fromName;
 
     public function __construct(PDO $db) {
         $this->db = $db;
-        $this->bot_token = $_ENV['TELEGRAM_BOT_TOKEN'] ?? '';
-        $this->encryption_key = base64_decode($_ENV['ENCRYPTION_KEY'] ?? '');
-        $this->client = new Client([
-            'timeout' => 10,
-            'verify' => false // Disable SSL verification for local development
-        ]);
-        if (!$this->bot_token) {
-            error_log('SendNotification: Missing TELEGRAM_BOT_TOKEN');
-            throw new \Exception('Invalid Telegram configuration');
-        }
-        if (strlen($this->encryption_key) !== 32) {
-            error_log('SendNotification: Invalid ENCRYPTION_KEY length');
-            throw new \Exception('Invalid encryption key');
+
+        $this->smtpHost  = $_ENV['MAIL_HOST']      ?? '';
+        $this->smtpPort  = (int)($_ENV['MAIL_PORT'] ?? 587);
+        $this->smtpUser  = $_ENV['MAIL_USERNAME']   ?? '';
+        $this->smtpPass  = $_ENV['MAIL_PASSWORD']   ?? '';
+        $this->fromEmail = $_ENV['MAIL_FROM_ADDRESS'] ?? $this->smtpUser;
+        $this->fromName  = $_ENV['MAIL_FROM_NAME']    ?? 'Smart Rent';
+
+        if (!$this->smtpHost || !$this->smtpUser || !$this->smtpPass) {
+            error_log('SendNotification: Missing SMTP configuration in .env');
+            throw new \Exception('Invalid mail configuration');
         }
     }
 
-    public function sendTelegramNotification($user_id, $message, $property_id = null) {
-        error_log("SendNotification: Attempting to send notification to user_id=$user_id, property_id=$property_id, message='$message'");
+    /**
+     * Send an email notification to a user.
+     *
+     * @param int|string $user_id
+     * @param string     $message   The sender name / short context shown in the email body
+     * @param int|null   $property_id
+     * @return bool
+     */
+    public function sendEmailNotification($user_id, string $message, $property_id = null): bool {
+        error_log("SendNotification: Attempting email to user_id=$user_id, property_id=$property_id");
 
         if (empty($message)) {
             error_log("SendNotification: Empty message for user_id=$user_id");
             return false;
         }
 
-        $stmt = $this->db->prepare("SELECT telegram_id, encrypted_telegram_id, telegram_notifications, language FROM users WHERE user_id = ?");
+        // --- fetch user -------------------------------------------------
+        $stmt = $this->db->prepare(
+            "SELECT email, email_notifications, language FROM users WHERE user_id = ?"
+        );
         $stmt->execute([$user_id]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -50,80 +63,112 @@ class SendNotification {
             return false;
         }
 
-        if (!$user['telegram_notifications']) {
-            error_log("SendNotification: Telegram notifications disabled for user_id=$user_id");
+        if (empty($user['email_notifications'])) {
+            error_log("SendNotification: Email notifications disabled for user_id=$user_id");
             return false;
         }
 
-        $telegram_id = false;
-        // Try to decrypt encrypted_telegram_id
-        if (!empty($user['encrypted_telegram_id'])) {
-            // Check if encrypted_telegram_id is a bcrypt hash
-            if (preg_match('/^\$2y\$10\$/', $user['encrypted_telegram_id'])) {
-                error_log("SendNotification: encrypted_telegram_id is a bcrypt hash for user_id=$user_id, encrypted_telegram_id='{$user['encrypted_telegram_id']}'. Expected AES-256-CBC encrypted value.");
-            } else {
-                $ciphertext = base64_decode($user['encrypted_telegram_id'], true);
-                if ($ciphertext !== false) {
-                    $telegram_id = openssl_decrypt($ciphertext, 'AES-256-CBC', $this->encryption_key, 0, substr($this->encryption_key, 0, 16));
-                    if ($telegram_id === false) {
-                        error_log("SendNotification: Decryption failed for user_id=$user_id: " . openssl_error_string());
-                    } else {
-                        error_log("SendNotification: Decrypted telegram_id=$telegram_id for user_id=$user_id");
-                    }
-                } else {
-                    error_log("SendNotification: Base64 decode failed for encrypted_telegram_id='{$user['encrypted_telegram_id']}' for user_id=$user_id");
-                }
-            }
-        }
-
-        // Fallback to plaintext telegram_id
-        if ($telegram_id === false && !empty($user['telegram_id'])) {
-            $telegram_id = $user['telegram_id'];
-            error_log("SendNotification: Using plaintext telegram_id=$telegram_id for user_id=$user_id");
-        }
-
-        if ($telegram_id === false) {
-            error_log("SendNotification: No valid Telegram ID for user_id=$user_id");
+        $toEmail = $user['email'] ?? '';
+        if (!filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+            error_log("SendNotification: Invalid email address for user_id=$user_id");
             return false;
         }
 
-        // Validate telegram_id is numeric
-        if (!is_numeric($telegram_id)) {
-            error_log("SendNotification: Invalid Telegram ID format for user_id=$user_id, telegram_id='$telegram_id'");
+        // --- rate limit -------------------------------------------------
+        $logs = new notification_logs($this->db);
+        if (!$logs->checkRateLimit($user_id)) {
+            error_log("SendNotification: Rate limit exceeded for user_id=$user_id");
             return false;
         }
 
-        error_log("SendNotification: Using telegram_id=$telegram_id for user_id=$user_id");
+        // --- build message ----------------------------------------------
+        $isItalian = ($user['language'] === 'it');
 
-        // Format notification message based on user's language
-        $notification_message = ($user['language'] === 'it')
-            ? "Hai un nuovo messaggio da <b>" . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . "</b>. Controlla la tua casella di posta sulla nostra piattaforma."
-            : "You have a new message from <b>" . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . "</b>. Check your inbox on our platform.";
+        $subject = $isItalian
+            ? 'Nuovo messaggio su Smart Rent'
+            : 'New message on Smart Rent';
 
-        $url = "https://api.telegram.org/bot{$this->bot_token}/sendMessage";
-        $data = [
-            'chat_id' => $telegram_id,
-            'text' => $notification_message,
-            'parse_mode' => 'HTML'
-        ];
+        $bodyText = $isItalian
+            ? "Hai un nuovo messaggio da {$message}. Controlla la tua casella di posta sulla nostra piattaforma."
+            : "You have a new message from {$message}. Check your inbox on our platform.";
 
-        error_log("SendNotification: Sending Telegram message to telegram_id=$telegram_id: $notification_message");
+        $bodyHtml = $this->buildHtmlEmail($bodyText, $isItalian);
 
+        // --- send via PHPMailer -----------------------------------------
+        $mail = new PHPMailer(true);
         try {
-            $response = $this->client->post($url, ['form_params' => $data]);
-            $response_data = json_decode($response->getBody(), true);
-            if ($response->getStatusCode() == 200 && $response_data['ok']) {
-                error_log("SendNotification: Telegram notification sent successfully for user_id=$user_id, telegram_id=$telegram_id");
-                $logs = new notification_logs($this->db);
-                $logs->logNotification($user_id, $property_id, $notification_message);
-                return true;
-            }
-            $error = $response_data['description'] ?? 'Unknown error';
-            error_log("SendNotification: Telegram API error for user_id=$user_id: $error");
-            return false;
-        } catch (RequestException $e) {
-            error_log("SendNotification: Telegram sendMessage error for user_id=$user_id: " . $e->getMessage());
+            // Server
+            $mail->isSMTP();
+            $mail->Host       = $this->smtpHost;
+            $mail->SMTPAuth   = true;
+            $mail->Username   = $this->smtpUser;
+            $mail->Password   = $this->smtpPass;
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = $this->smtpPort;
+
+            // Recipients
+            $mail->setFrom($this->fromEmail, $this->fromName);
+            $mail->addAddress($toEmail);
+
+            // Content
+            $mail->isHTML(true);
+            $mail->Subject = $subject;
+            $mail->Body    = $bodyHtml;
+            $mail->AltBody = $bodyText;
+
+            $mail->send();
+
+            error_log("SendNotification: Email sent to $toEmail for user_id=$user_id");
+            $logs->logNotification($user_id, $property_id, $bodyText);
+            return true;
+
+        } catch (MailerException $e) {
+            error_log("SendNotification: PHPMailer error for user_id=$user_id: " . $mail->ErrorInfo);
             return false;
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Kept for backward-compatibility so callers using the old method name
+    // still work without touching every call-site immediately.
+    // -----------------------------------------------------------------------
+    public function sendTelegramNotification($user_id, $message, $property_id = null): bool {
+        return $this->sendEmailNotification($user_id, $message, $property_id);
+    }
+
+    // -----------------------------------------------------------------------
+    private function buildHtmlEmail(string $bodyText, bool $isItalian): string {
+        $platformLabel = $isItalian ? 'Vai alla piattaforma' : 'Go to platform';
+        $footerText    = $isItalian
+            ? 'Stai ricevendo questa email perché hai attivato le notifiche su Smart Rent.'
+            : 'You are receiving this email because you enabled notifications on Smart Rent.';
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
+    .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 8px;
+                 padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    h2 { color: #333; }
+    p  { color: #555; line-height: 1.6; }
+    .btn { display: inline-block; margin-top: 20px; padding: 12px 24px;
+           background: #4f46e5; color: #fff; border-radius: 6px;
+           text-decoration: none; font-weight: bold; }
+    .footer { margin-top: 32px; font-size: 12px; color: #999; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Smart Rent</h2>
+    <p>{$bodyText}</p>
+    <a class="btn" href="/">$platformLabel</a>
+    <p class="footer">$footerText</p>
+  </div>
+</body>
+</html>
+HTML;
     }
 }

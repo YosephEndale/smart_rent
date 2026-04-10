@@ -9,14 +9,13 @@ use App\Notifications\Data\notification_logs;
 
 $user_id = $_SESSION['user_id'] ?? '';
 if (empty($user_id)) {
-    header('Location: ' . ROOT_DIR . '/app/auth/presentation/login.php?error=Please log in to view notifications');
+    header('Location: /app/auth/presentation/login.php?error=Please log in to view notifications');
     exit;
 }
 
-$logs = new notification_logs(get_db_connection());
+$logs          = new notification_logs(get_db_connection());
 $notifications = $logs->getNotifications($user_id);
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -28,24 +27,27 @@ $notifications = $logs->getNotifications($user_id);
 </head>
 <body>
 <?php include ROOT_DIR . '/components/user_header.php'; ?>
+
 <section class="notifications">
     <h2>Your Notifications</h2>
+
     <?php if (empty($notifications)): ?>
         <p>No notifications yet.</p>
     <?php else: ?>
         <ul>
             <?php foreach ($notifications as $notif): ?>
-                <li>
-                    <p><?php echo htmlspecialchars($notif['message']); ?></p>
-                    <?php if ($notif['property_id']): ?>
-                        <p>Property: <?php echo htmlspecialchars($notif['property_name'] ?? 'Unknown'); ?></p>
-                    <?php endif; ?>
-                    <small><?php echo date('M d, Y H:i', strtotime($notif['sent_at'])); ?></small>
-                </li>
+            <li>
+                <p><?= htmlspecialchars($notif['message']); ?></p>
+                <?php if ($notif['property_id']): ?>
+                    <p>Property: <?= htmlspecialchars($notif['property_name'] ?? 'Unknown'); ?></p>
+                <?php endif; ?>
+                <small><?= date('M d, Y H:i', strtotime($notif['sent_at'])); ?></small>
+            </li>
             <?php endforeach; ?>
         </ul>
     <?php endif; ?>
 </section>
+
 <?php include ROOT_DIR . '/components/footer.php'; ?>
 </body>
 </html>
